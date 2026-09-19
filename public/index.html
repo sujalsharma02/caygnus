@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Memory Console</title>
+<style>
+  :root { --bg:#fff; --fg:#111; --muted:#666; --line:#ddd; --ok:#0a7; --warn:#c80; --bad:#c33; --sup:#888; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#111; --fg:#eee; --muted:#999; --line:#333; } }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--fg); font:14px/1.4 system-ui, sans-serif; max-width:960px; margin-inline:auto; }
+  h1 { font-size:18px; margin:0 0 12px; }
+  h2 { font-size:14px; margin:20px 0 8px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
+  form, .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  input, button, select { font:inherit; padding:6px 8px; border:1px solid var(--line); border-radius:4px; background:var(--bg); color:var(--fg); }
+  input { flex:1; min-width:120px; }
+  button { cursor:pointer; }
+  table { width:100%; border-collapse:collapse; margin-top:8px; }
+  td, th { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--muted); font-weight:500; }
+  .state-active { color:var(--ok); } .state-superseded { color:var(--sup); } .state-deleted { color:var(--bad); }
+  .conflict { color:var(--warn); }
+  .muted { color:var(--muted); } .mono { font-family:ui-monospace, monospace; font-size:12px; }
+  pre { background:var(--line); padding:8px; border-radius:4px; overflow:auto; font-size:12px; }
+  label { display:flex; gap:4px; align-items:center; }
+</style>
+</head>
+<body>
+<h1>Memory Console</h1>
+
+<h2>Remember</h2>
+<form id="remember">
+  <input name="attribute" placeholder="attribute (home_city)" required>
+  <input name="value" placeholder="value (Mumbai)" required>
+  <input name="message_id" placeholder="message id (m42)" required>
+  <input name="text" placeholder="source text (I moved to Mumbai)" required style="flex:3">
+  <label><input type="checkbox" name="correction" style="flex:0"> force correction</label>
+  <button>Store</button>
+</form>
+<pre id="remember-out" class="muted">rule and stored memory appear here</pre>
+
+<h2>Recall</h2>
+<form id="recall">
+  <input name="q" placeholder="Which city does the user live in?" required>
+  <input name="limit" type="number" value="5" min="1" style="flex:0; width:60px">
+  <button>Search</button>
+</form>
+<table id="hits"><thead><tr><th>score</th><th>memory</th><th>matched</th><th>rule</th></tr></thead><tbody></tbody></table>
+
+<h2>Memories <select id="filter"><option>active</option><option>superseded</option><option>deleted</option><option>all</option></select></h2>
+<table id="memories"><thead><tr><th>state</th><th>attribute</th><th>value</th><th>source</th><th>links</th><th></th></tr></thead><tbody></tbody></table>
+
+<h2>Inspect</h2>
+<pre id="inspect" class="muted">click "history" on a memory</pre>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const api = async (path, opt) => {
+  const r = await fetch(path, opt);
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+};
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const short = (id) => id.slice(4, 10);
+
+async function loadMemories() {
+  const list = await api(`/memories?state=${$("#filter").value}`);
+  $("#memories tbody").innerHTML = list.map((m) => `<tr>
+    <td class="state-${m.state}">${m.state}</td>
+    <td>${esc(m.attribute)}</td><td>${esc(m.value)}</td>
+    <td class="muted">${esc(m.source.message_id)}: ${esc(m.source.text)}</td>
+    <td class="mono">${m.supersedes ? `⇐ ${short(m.supersedes)}<br>` : ""}${m.superseded_by ? `⇒ ${short(m.superseded_by)}<br>` : ""}${m.conflicts_with.length ? `<span class="conflict">⚡ ${m.conflicts_with.map(short).join(", ")}</span>` : ""}</td>
+    <td><button data-hist="${m.id}">history</button>${m.state === "active" ? ` <button data-del="${m.id}">delete</button>` : ""}${m.conflicts_with.length && m.state === "active" ? m.conflicts_with.map((c) => ` <button data-win="${m.id}" data-lose="${c}">wins over ${short(c)}</button>`).join("") : ""}</td>
+  </tr>`).join("");
+}
+
+$("#remember").onsubmit = async (e) => {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  const body = { attribute: f.get("attribute"), value: f.get("value"), source: { message_id: f.get("message_id"), text: f.get("text") } };
+  if (f.get("correction")) body.correction = true;
+  try {
+    const r = await api("/memories", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    $("#remember-out").textContent = JSON.stringify(r, null, 2);
+    $("#remember-out").className = "";
+    loadMemories();
+  } catch (err) { $("#remember-out").textContent = "error: " + err.message; }
+};
+
+$("#recall").onsubmit = async (e) => {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  const hits = await api(`/recall?q=${encodeURIComponent(f.get("q"))}&limit=${f.get("limit")}`);
+  $("#hits tbody").innerHTML = hits.length ? hits.map((h) => `<tr>
+    <td>${h.score}</td><td><b>${esc(h.memory.attribute)}</b> = ${esc(h.memory.value)}</td>
+    <td class="mono">${h.matched_terms.join(", ")}</td>
+    <td class="${h.rule.includes("conflict") ? "conflict" : ""}">${h.rule}</td></tr>`).join("")
+    : `<tr><td colspan="4" class="muted">no matches</td></tr>`;
+};
+
+$("#memories").onclick = async (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  try {
+    if (b.dataset.hist) { $("#inspect").textContent = JSON.stringify(await api(`/memories/${b.dataset.hist}/history`), null, 2); $("#inspect").className = ""; }
+    if (b.dataset.del) { await api(`/memories/${b.dataset.del}`, { method: "DELETE" }); loadMemories(); }
+    if (b.dataset.win) { await api(`/memories/${b.dataset.win}/supersede/${b.dataset.lose}`, { method: "POST" }); loadMemories(); }
+  } catch (err) { alert(err.message); }
+};
+$("#filter").onchange = loadMemories;
+loadMemories();
+</script>
+</body>
+</html>
