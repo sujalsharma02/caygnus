@@ -3,7 +3,7 @@
 ## Candidate
 
 - **Name:** <!-- TODO -->
-- **Email:** info@cafoli.in
+- **Email:** <!-- TODO -->
 - **GitHub:** <!-- TODO -->
 - **Selected problem:** Problem 4 — Trustworthy Long-Term Memory
 - **Demo video:** <!-- TODO -->
@@ -89,7 +89,7 @@ Node 24 + TypeScript with zero build step, `node:sqlite`, `node:test`; Express i
 
 ## AI usage
 
-Claude Code (Opus 5) wrote the initial implementation, fixture and tests from the problem brief, under a "minimal viable" prompt. I reviewed every file, chose the stack (switched from FastAPI to TypeScript mid-way), fixed two failures the benchmark exposed in the tokenizer (`user's` → stray `s` token; `hobbies` not matching `hobby`), and rewrote fixture queries that were testing synonyms the lexical retriever cannot honour. All claims above were verified by running `npm test` and `npm run bench`.
+An AI coding assistant wrote the initial implementation, fixture and tests from the problem brief, under a "minimal viable" prompt. I reviewed every file, chose the stack (switched from FastAPI to TypeScript mid-way), fixed two failures the benchmark exposed in the tokenizer (`user's` → stray `s` token; `hobbies` not matching `hobby`), and rewrote fixture queries that were testing synonyms the lexical retriever cannot honour. All claims above were verified by running `npm test` and `npm run bench`.
 
 ## Credibility note
 
