@@ -2,15 +2,15 @@
 
 ## Candidate
 
-- **Name:** <!-- TODO -->
-- **Email:** <!-- TODO -->
-- **GitHub:** <!-- TODO -->
+- **Name:** Sujal Sharma
+- **Email:** <!-- TODO: fill before submitting -->
+- **GitHub:** [sujalsharma02](https://github.com/sujalsharma02)
 - **Selected problem:** Problem 4 — Trustworthy Long-Term Memory
-- **Demo video:** <!-- TODO -->
+- **Demo video:** <!-- TODO: fill before submitting -->
 
 ## Run the project
 
-Prerequisite: Node >= 24 (TypeScript runs natively; SQLite and the test runner are built in). No environment variables are required. Optional: `PORT` (default 3000), `MEMORY_DB` (default `./memory.db`, use `:memory:` for ephemeral).
+Prerequisite: **Node >= 24** — a hard requirement, because the database is `node:sqlite` (absent before 24) and TypeScript runs natively without a build step. `node --version` to check; `nvm install 24` if needed. No environment variables are required. Optional: `PORT` (default 3000), `MEMORY_DB` (default `./memory.db`, use `:memory:` for ephemeral).
 
 ```text
 npm install
@@ -27,7 +27,7 @@ npm start
 npm test
 ```
 
-9 tests via `node:test`, in-memory SQLite, injected monotonic clock, no network. They cover: storage + provenance + idempotent ids, bounded retrieval with evidence, explicit correction + chain history + "moved back", uncertain contradiction + manual resolution, multi-valued attributes, soft deletion, benchmark determinism (run twice), and the HTTP layer.
+11 tests via `node:test`, in-memory SQLite, injected monotonic clock, no network. They cover: storage + provenance + idempotent ids, bounded retrieval with evidence, explicit correction + chain history + "moved back", uncertain contradiction + manual resolution, multi-valued attributes, soft deletion, benchmark determinism (run twice), the HTTP layer, and the retrievers (vector finds a misspelling lexical cannot; hybrid is deterministic and keeps evidence).
 
 ## Acceptance scenarios and verification
 
@@ -54,19 +54,21 @@ Observed result (this commit): **25/25 queries passed**, `memories: {"active":33
 HTTP (server.ts)  →  Engine (engine.ts)  →  Store (store.ts, SQLite)
                          │
                          ├─ reconcile.ts   pure: (candidate, active same-key memories) → rule
-                         └─ retrieve.ts    pure: (query, active memories) → ranked hits with evidence
+                         └─ retrieve.ts    Retriever interface: Lexical | Vector(Embedder) | Hybrid
+                                 └─ embed.ts   Embedder interface + HashEmbedder (local, deterministic)
 bench.ts / tests drive Engine directly with Store(":memory:") and an injected clock.
 ```
 
 - **Store**: one table, lookup columns + JSON body. `put/get/list` only.
 - **Engine**: the only place state transitions happen (`active → superseded | deleted`). Owns identity and the clock.
 - **reconcile**: decides `new | duplicate | multi | supersede | conflict`. No I/O.
-- **retrieve**: tokenise → stem → overlap score → sort by (score, recency, id) → slice. No I/O.
+- **retrieve**: `Retriever` interface with three implementations. `LexicalRetriever` = fraction of stemmed query terms present. `VectorRetriever` = cosine over `Embedder` vectors with a floor. `HybridRetriever` = `0.6·lexical + 0.4·vector`, union of candidates, deterministic tie-break (score, recency, id). No I/O. The engine holds a `Retriever` and never sees embeddings.
+- **embed**: `Embedder { embed(text): Promise<number[]> }`. Default `HashEmbedder`: feature-hashed char-trigrams of stemmed tokens, L2-normalised, 256 dims, no dependencies, bit-for-bit deterministic. A real model (transformers.js MiniLM) drops in behind the interface.
 - **server**: validation and status codes only; also serves `public/index.html`, a single-file vanilla-JS console used in the demo (store / recall / list by state / history / delete / resolve conflict). Not a product UI.
 
 ## Technology choices
 
-Node 24 + TypeScript with zero build step, `node:sqlite`, `node:test`; Express is the only runtime dependency. Alternatives considered: FastAPI (equally fine, switched on request), an embedding model for retrieval (rejected: the brief demands determinism with no paid service, and lexical overlap is explainable). Trade-off accepted: `node:sqlite` is still flagged experimental; it prints a warning and would be swapped for `better-sqlite3` behind the same `Store` if that mattered.
+Node 24 + TypeScript with zero build step, `node:sqlite`, `node:test`; Express is the only runtime dependency. Alternatives considered: FastAPI (equally fine, switched on request), a neural embedding model as the default retriever (rejected for the submitted build: the brief demands determinism with no paid service, and a 90 MB model download in `npm install` hurts the 10-minute setup rule; the `Embedder` seam exists so it is a one-file swap). Trade-off accepted: `node:sqlite` is still flagged experimental; it prints a warning and would be swapped for `better-sqlite3` behind the same `Store` if that mattered.
 
 ## Important decisions
 
@@ -77,7 +79,8 @@ Node 24 + TypeScript with zero build step, `node:sqlite`, `node:test`; Express i
 ## Assumptions and limitations
 
 - Memories arrive as structured candidates (`attribute/value`); free-text extraction is out of scope per the brief. Attribute names are the vocabulary; two callers using `city` and `home_city` will not reconcile.
-- Retrieval is lexical (stemmed token overlap over `subject + attribute + value + source text`). "Where do you live" matches only if a memory's text contains "live"/"city". No synonyms, no embeddings, no cross-lingual.
+- Retrieval is hybrid lexical + hashed-trigram vector over `subject + attribute + value + source text`. The vector side catches misspellings and morphology, **not synonyms**: "Where do you reside" will not match "I live in Mumbai". True semantic recall needs a model behind `Embedder`.
+- Hybrid weights (0.6/0.4) and the vector floor (0.3) are tuned on the fixture, not learned.
 - The stemmer is deliberately crude (`moved`/`move` → `mov`); it must be consistent, not correct.
 - Single user (`subject` defaults to `"user"`), no auth, single process.
 - `MULTI_VALUED` is a hard-coded set; it would become per-attribute metadata with more than a handful of entries.
@@ -85,7 +88,7 @@ Node 24 + TypeScript with zero build step, `node:sqlite`, `node:test`; Express i
 ## Production and scale
 
 *Now:* one SQLite file, full scan of active memories per query, in-process.
-*First changes:* (1) move `retrieve` to SQLite FTS5 or a real inverted index, keeping the same `Hit` evidence shape; (2) per-attribute schema (cardinality, sensitivity class) instead of the `MULTI_VALUED` set; (3) sensitive attributes (health, finances, identifiers) stored with a `sensitivity` flag, excluded from default recall, hard-deleted on request and never echoed in evidence; (4) an extraction stage in front of `remember` that emits candidates with a confidence, routing low-confidence ones to `conflict` instead of `supersede`; (5) `subject` becomes a tenant key with row-level scoping.
+*First changes:* (1) `LexicalRetriever` → SQLite FTS5, `VectorRetriever` → precomputed vectors in a table (or sqlite-vec) instead of the in-process cache, `HashEmbedder` → a small local model; the `Retriever`/`Embedder` interfaces and the `Hit` evidence shape stay; (2) per-attribute schema (cardinality, sensitivity class) instead of the `MULTI_VALUED` set; (3) sensitive attributes (health, finances, identifiers) stored with a `sensitivity` flag, excluded from default recall, hard-deleted on request and never echoed in evidence; (4) an extraction stage in front of `remember` that emits candidates with a confidence, routing low-confidence ones to `conflict` instead of `supersede`; (5) `subject` becomes a tenant key with row-level scoping.
 
 ## AI usage
 
