@@ -10,7 +10,7 @@ interface Fixture {
   queries: { q: string; include: string[]; exclude: string[]; limit?: number }[];
 }
 
-export function runBench(path: string, log = console.log): boolean {
+export async function runBench(path: string, log = console.log): Promise<boolean> {
   let tick = 0;
   const engine = new Engine(new Store(":memory:"), () => ++tick); // injected clock: fully deterministic
   const fx: Fixture = JSON.parse(readFileSync(path, "utf8"));
@@ -20,7 +20,7 @@ export function runBench(path: string, log = console.log): boolean {
 
   let pass = 0;
   for (const { q, include, exclude, limit } of fx.queries) {
-    const hits = engine.recall(q, limit);
+    const hits = await engine.recall(q, limit ?? 5);
     const got = new Set(hits.map((h) => h.memory.id));
     const missing = include.filter((l) => !got.has(ids.get(l)!));
     const leaked = exclude.filter((l) => got.has(ids.get(l)!));
@@ -38,4 +38,4 @@ export function runBench(path: string, log = console.log): boolean {
   return pass === fx.queries.length;
 }
 
-if (import.meta.main) process.exit(runBench(process.argv[2] ?? "fixtures/fixture.json") ? 0 : 1);
+if (import.meta.main) process.exit((await runBench(process.argv[2] ?? "fixtures/fixture.json")) ? 0 : 1);

@@ -4,6 +4,9 @@ import { Engine, Invalid } from "../src/engine.ts";
 import { Store } from "../src/store.ts";
 import { createApp } from "../src/server.ts";
 import { runBench } from "../bench.ts";
+import { HashEmbedder } from "../src/embed.ts";
+import { HybridRetriever, LexicalRetriever, VectorRetriever } from "../src/retrieve.ts";
+import type { Memory } from "../src/types.ts";
 
 const src = (id: string, text: string) => ({ message_id: id, text });
 const fresh = () => {
@@ -26,21 +29,21 @@ describe("storage and provenance (AC1)", () => {
 });
 
 describe("bounded relevant retrieval (AC2)", () => {
-  it("returns only matching active memories with evidence, capped at limit", () => {
+  it("returns only matching active memories with evidence, capped at limit", async () => {
     const e = fresh();
     e.remember({ attribute: "home_city", value: "Pune", source: src("m1", "I live in Pune") });
     e.remember({ attribute: "pet", value: "dog", source: src("m2", "I have a dog") });
     e.remember({ attribute: "likes", value: "jazz", source: src("m3", "I like jazz") });
-    const hits = e.recall("which city does the user live in", 1);
+    const hits = await e.recall("which city does the user live in", 1);
     assert.equal(hits.length, 1);
     assert.equal(hits[0]!.memory.value, "Pune");
     assert.deepEqual(hits[0]!.matched_terms, ["city", "liv"]);
-    assert.equal(e.recall("quantum physics").length, 0);
+    assert.equal((await e.recall("quantum physics")).length, 0);
   });
 });
 
 describe("explicit correction (AC3)", () => {
-  it("supersedes, links both ways, and excludes the old fact from retrieval", () => {
+  it("supersedes, links both ways, and excludes the old fact from retrieval", async () => {
     const e = fresh();
     const pune = e.remember({ attribute: "home_city", value: "Pune", source: src("m1", "I live in Pune") }).memory;
     const { memory: mumbai, rule } = e.remember({
@@ -51,7 +54,7 @@ describe("explicit correction (AC3)", () => {
     assert.equal(e.get(pune.id)?.superseded_by, mumbai.id);
     assert.equal(mumbai.supersedes, pune.id);
     assert.deepEqual(e.history(pune.id).map((m) => m.value), ["Pune", "Mumbai"]);
-    assert.deepEqual(e.recall("city").map((h) => h.memory.value), ["Mumbai"]);
+    assert.deepEqual((await e.recall("city")).map((h) => h.memory.value), ["Mumbai"]);
   });
 
   it("handles 'moved back' as a third link in the chain", () => {
@@ -66,7 +69,7 @@ describe("explicit correction (AC3)", () => {
 });
 
 describe("uncertain contradiction (AC4)", () => {
-  it("keeps both active, links the conflict, and allows manual resolution", () => {
+  it("keeps both active, links the conflict, and allows manual resolution", async () => {
     const e = fresh();
     const italian = e.remember({ attribute: "favorite_cuisine", value: "Italian", source: src("m1", "Italian is my favorite cuisine") }).memory;
     const { memory: thai, rule } = e.remember({
@@ -76,7 +79,7 @@ describe("uncertain contradiction (AC4)", () => {
     assert.equal(e.get(italian.id)?.state, "active");
     assert.deepEqual(e.get(italian.id)?.conflicts_with, [thai.id]);
     assert.deepEqual(thai.conflicts_with, [italian.id]);
-    assert.ok(e.recall("favorite cuisine").every((h) => h.rule.includes("unresolved_conflict")));
+    assert.ok((await e.recall("favorite cuisine")).every((h) => h.rule.includes("unresolved_conflict")));
 
     e.supersede(thai.id, italian.id);
     assert.equal(e.get(italian.id)?.state, "superseded");
@@ -93,21 +96,21 @@ describe("uncertain contradiction (AC4)", () => {
 });
 
 describe("deletion (AC5)", () => {
-  it("soft-deletes: gone from retrieval, still inspectable", () => {
+  it("soft-deletes: gone from retrieval, still inspectable", async () => {
     const e = fresh();
     const m = e.remember({ attribute: "gym", value: "Cult.fit", source: src("m1", "my gym is Cult.fit") }).memory;
     e.delete(m.id);
-    assert.equal(e.recall("gym").length, 0);
+    assert.equal((await e.recall("gym")).length, 0);
     assert.equal(e.get(m.id)?.state, "deleted");
     assert.equal(e.list("active").length, 0);
   });
 });
 
 describe("stable evaluation (AC6)", () => {
-  it("fixture benchmark passes and is repeatable", () => {
+  it("fixture benchmark passes and is repeatable", async () => {
     const quiet = () => {};
-    assert.equal(runBench("fixtures/fixture.json", quiet), true);
-    assert.equal(runBench("fixtures/fixture.json", quiet), true);
+    assert.equal(await runBench("fixtures/fixture.json", quiet), true);
+    assert.equal(await runBench("fixtures/fixture.json", quiet), true);
   });
 });
 
@@ -130,5 +133,28 @@ describe("http api", () => {
     } finally {
       server.close();
     }
+  });
+});
+
+describe("retrievers", () => {
+  const mem = (id: string, text: string): Memory =>
+    ({ id, subject: "user", attribute: "x", value: "", text, source: src(id, text), state: "active", created_at: 1, updated_at: 1, conflicts_with: [] });
+  const docs = [mem("a", "user favorite cuisine Italian"), mem("b", "user pet dog Bruno"), mem("c", "user timezone Asia/Kolkata")];
+
+  it("vector retriever finds near-spellings the lexical one cannot", async () => {
+    const v = new VectorRetriever(new HashEmbedder());
+    const l = new LexicalRetriever();
+    assert.equal((await l.retrieve("Italien", docs, 5)).length, 0);
+    assert.equal((await v.retrieve("Italien", docs, 5))[0]?.memory.id, "a");
+  });
+
+  it("hybrid combines both signals, keeps evidence, and is deterministic", async () => {
+    const h = new HybridRetriever(new LexicalRetriever(), new VectorRetriever(new HashEmbedder()));
+    const r1 = await h.retrieve("what is the favorite cuisine", docs, 5);
+    const r2 = await h.retrieve("what is the favorite cuisine", docs, 5);
+    assert.deepEqual(r1, r2);
+    assert.equal(r1[0]?.memory.id, "a");
+    assert.equal(r1[0]?.rule, "lexical+vector");
+    assert.deepEqual(r1[0]?.matched_terms, ["cuisin", "favorit"]);
   });
 });

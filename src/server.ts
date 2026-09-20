@@ -31,10 +31,10 @@ export function createApp(engine: Engine) {
   );
   app.delete("/memories/:id", (req, res) => res.json(engine.delete(req.params.id)));
 
-  app.get("/recall", (req, res) => {
+  app.get("/recall", async (req, res) => {
     const q = String(req.query.q ?? "");
     if (!q) return res.status(400).json({ error: "q is required" });
-    res.json(engine.recall(q, Number(req.query.limit ?? 5)));
+    res.json(await engine.recall(q, Number(req.query.limit ?? 5)));
   });
 
   app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {

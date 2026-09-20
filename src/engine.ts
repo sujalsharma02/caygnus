@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { decide, type Rule } from "./reconcile.ts";
-import { retrieve } from "./retrieve.ts";
+import { HashEmbedder } from "./embed.ts";
+import { HybridRetriever, LexicalRetriever, VectorRetriever, type Retriever } from "./retrieve.ts";
 import type { Store } from "./store.ts";
 import type { Candidate, Hit, Memory } from "./types.ts";
 
@@ -16,10 +17,16 @@ export class Invalid extends Error {}
 export class Engine {
   private store: Store;
   private clock: () => number;
+  private retriever: Retriever;
 
-  constructor(store: Store, clock: () => number = Date.now) {
+  constructor(
+    store: Store,
+    clock: () => number = Date.now,
+    retriever: Retriever = new HybridRetriever(new LexicalRetriever(), new VectorRetriever(new HashEmbedder())),
+  ) {
     this.store = store;
     this.clock = clock;
+    this.retriever = retriever;
   }
 
   /** Store a candidate, reconciling it against active memories with the same key. */
@@ -86,8 +93,9 @@ export class Engine {
     return chain;
   }
 
-  recall(query: string, limit = 5): Hit[] {
-    return retrieve(query, this.store.list({ state: "active" }), limit);
+  /** Lifecycle filter (active only) happens here; the retriever never sees superseded/deleted rows. */
+  recall(query: string, limit = 5): Promise<Hit[]> {
+    return this.retriever.retrieve(query, this.store.list({ state: "active" }), limit);
   }
 
   list(state?: Memory["state"]): Memory[] {
