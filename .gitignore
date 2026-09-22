@@ -1,3 +1,15 @@
 node_modules/
 *.db
 DEMO_SCRIPT.md
+DEMO_SCRIPT.md
+demo.srt
+demo_audio/
+demo*.mp4
+demo*.wav
+demo*.mp3
+make_demo.py
+demo_timed.srt
+demo_narration.mp3
+edit_demo.py
+demo_edit.srt
+recording.mp4

@@ -6,7 +6,7 @@
 - **Email:** sujalsharma1786@gmail.com
 - **GitHub:** [sujalsharma02](https://github.com/sujalsharma02)
 - **Selected problem:** Problem 4 — Trustworthy Long-Term Memory
-- **Demo video:** <!-- TODO: fill before submitting -->
+- **Demo video:** https://youtu.be/Dm6v82Y--qg
 
 ## Run the project
 
@@ -96,4 +96,3 @@ An AI coding assistant wrote the initial implementation, fixture and tests from 
 
 ## Credibility note
 
-<!-- TODO: one shipped system, your contribution, scale, one hard decision, link. -->
