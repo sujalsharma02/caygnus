@@ -3,7 +3,7 @@
 ## Candidate
 
 - **Name:** Sujal Sharma
-- **Email:** <!-- TODO: fill before submitting -->
+- **Email:** sujalsharma1786@gmail.com
 - **GitHub:** [sujalsharma02](https://github.com/sujalsharma02)
 - **Selected problem:** Problem 4 — Trustworthy Long-Term Memory
 - **Demo video:** <!-- TODO: fill before submitting -->
@@ -19,7 +19,7 @@ npm start
 
 **Successful scenario:** POST two `home_city` facts where the second source text contains a correction word ("moved"). The response `rule` is `supersede`; `GET /recall?q=city` returns only the new one; `GET /memories/:id/history` shows the chain. Exact curl commands are in [README.md](README.md).
 
-**Failure / recovery scenario (uncertain contradiction):** POST `favorite_cuisine=Italian` then `favorite_cuisine=Thai` with a source text that does *not* signal correction. The response `rule` is `conflict`: both stay active, each carries `conflicts_with`, and `/recall` marks them `term_overlap+unresolved_conflict`. Resolve with `POST /memories/:thaiId/supersede/:italianId`. Nothing is destroyed until a user or caller decides.
+**Failure / recovery scenario (uncertain contradiction):** POST `favorite_cuisine=Italian` then `favorite_cuisine=Thai` with a source text that does *not* signal correction. The response `rule` is `conflict`: both stay active, each carries `conflicts_with`, and `/recall` marks them `lexical+vector+unresolved_conflict`. Resolve with `POST /memories/:thaiId/supersede/:italianId`. Nothing is destroyed until a user or caller decides.
 
 ## Run the tests
 

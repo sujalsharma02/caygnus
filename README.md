@@ -9,7 +9,7 @@ Problem 4 of the [Caygnus product-engineer challenge](https://github.com/caygnus
 ```bash
 npm install
 npm start            # http://localhost:3000 (demo console at /), data in ./memory.db  (MEMORY_DB=:memory: for ephemeral)
-npm test             # 9 deterministic tests
+npm test             # 11 deterministic tests
 npm run bench        # fixture benchmark, exit 1 on any mismatch
 ```
 
